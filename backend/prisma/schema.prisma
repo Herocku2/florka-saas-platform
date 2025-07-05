@@ -1,0 +1,458 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+// Enums converted to strings for SQLite compatibility
+// UserRole: USER, ADMIN, SUPER_ADMIN
+// UserStatus: ACTIVE, INACTIVE, SUSPENDED, PENDING_VERIFICATION
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  firstName String?
+  lastName  String?
+  role      String @default("USER")
+  status    String @default("PENDING_VERIFICATION")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  lastLogin DateTime?
+  
+  // Email verification
+  emailVerified Boolean @default(false)
+  verificationToken String?
+  
+  // Password reset
+  resetToken String?
+  resetTokenExpiry DateTime?
+  
+  @@map("users")
+}
+
+model AdminUser {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String   // Cambiado de firstName/lastName a name
+  role      String @default("ADMIN")
+  status    String @default("ACTIVE")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  lastLogin DateTime?
+  
+  // Admin specific fields
+  permissions String? // JSON string of permissions array
+  department String?
+  
+  // Relaciones
+  projects              Project[]
+  nextProjects          NextProject[]
+  news                  News[]
+  votings               Voting[]
+  publicationRequests   PublicationRequest[]
+  tokenCreationRequests TokenCreationRequest[]
+  
+  @@map("admin_users")
+}
+
+// ProjectStatus: DRAFT, PUBLISHED, ARCHIVED, FEATURED
+// ProjectCategory: DEFI, NFT, GAMING, METAVERSE, AI, INFRASTRUCTURE, OTHER
+
+model Project {
+  id          String   @id @default(cuid())
+  name        String
+  symbol      String   @unique
+  description String?
+  longDescription String?
+  
+  // Project details
+  tokenAddress String?
+  website     String?
+  twitter     String?
+  telegram    String?
+  discord     String?
+  
+  // Project metrics
+  marketCap   Float?   @default(0)
+  price       Float?   @default(0)
+  volume24h   Float?   @default(0)
+  
+  // Project status and categorization
+  status      String @default("DRAFT")
+  category    String @default("OTHER")
+  featured    Boolean  @default(false)
+  
+  // Voting and ranking
+  votes       Int      @default(0)
+  ranking     Int?     @default(0)
+  
+  // Images and media
+  logoUrl     String?
+  bannerUrl   String?
+  images      String? // JSON string of image URLs array
+  
+  // Timestamps
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  publishedAt DateTime?
+  
+  // Relations
+  createdBy   String
+  admin       AdminUser @relation(fields: [createdBy], references: [id])
+  
+  @@map("projects")
+}
+
+// Next Projects - Upcoming token launches
+model NextProject {
+  id          String   @id @default(cuid())
+  name        String
+  symbol      String   @unique
+  description String?
+  longDescription String?
+  
+  // Launch details
+  launchDate  DateTime?
+  presaleDate DateTime?
+  tokenPrice  Float?
+  totalSupply String?
+  
+  // Project details
+  website     String?
+  twitter     String?
+  telegram    String?
+  discord     String?
+  whitepaper  String?
+  
+  // Status and categorization
+  status      String @default("UPCOMING") // UPCOMING, PRESALE, LAUNCHED, CANCELLED
+  category    String @default("OTHER")
+  featured    Boolean  @default(false)
+  
+  // Images and media
+  logoUrl     String?
+  bannerUrl   String?
+  
+  // Timestamps
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relations
+  createdBy   String
+  admin       AdminUser @relation(fields: [createdBy], references: [id])
+  
+  @@map("next_projects")
+}
+
+// News Management
+model News {
+  id          String   @id @default(cuid())
+  title       String
+  slug        String   @unique
+  content     String   // Rich text content
+  excerpt     String?  // Short description
+  
+  // SEO and metadata
+  metaTitle   String?
+  metaDescription String?
+  tags        String?  // JSON array of tags
+  
+  // Status and visibility
+  status      String @default("DRAFT") // DRAFT, PUBLISHED, ARCHIVED
+  featured    Boolean  @default(false)
+  
+  // Images and media
+  featuredImage String?
+  images      String? // JSON array of image URLs
+  
+  // Engagement
+  views       Int      @default(0)
+  likes       Int      @default(0)
+  
+  // Timestamps
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  publishedAt DateTime?
+  
+  // Relations
+  authorId    String
+  author      AdminUser @relation(fields: [authorId], references: [id])
+  
+  @@map("news")
+}
+
+// Voting System
+model Voting {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  
+  // Voting configuration
+  type        String @default("SINGLE") // SINGLE, MULTIPLE, RANKING
+  maxChoices  Int      @default(1)
+  
+  // Status and timing
+  status      String @default("DRAFT") // DRAFT, ACTIVE, CLOSED, ARCHIVED
+  startDate   DateTime?
+  endDate     DateTime?
+  
+  // Results
+  totalVotes  Int      @default(0)
+  
+  // Timestamps
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relations
+  createdBy   String
+  admin       AdminUser @relation(fields: [createdBy], references: [id])
+  candidates  VotingCandidate[]
+  votes       Vote[]
+  
+  @@map("voting")
+}
+
+model VotingCandidate {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  imageUrl    String?
+  
+  // Results
+  voteCount   Int      @default(0)
+  
+  // Relations
+  votingId    String
+  voting      Voting   @relation(fields: [votingId], references: [id], onDelete: Cascade)
+  votes       Vote[]
+  
+  @@map("voting_candidates")
+}
+
+model Vote {
+  id          String   @id @default(cuid())
+  
+  // Voter information (anonymous or user-based)
+  voterEmail  String?
+  voterIP     String?
+  
+  // Timestamps
+  createdAt   DateTime @default(now())
+  
+  // Relations
+  votingId    String
+  voting      Voting   @relation(fields: [votingId], references: [id], onDelete: Cascade)
+  candidateId String
+  candidate   VotingCandidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  
+  @@map("votes")
+}
+
+// Forum System
+model ForumUser {
+  id          String   @id @default(cuid())
+  username    String   @unique
+  email       String   @unique
+  avatar      String?
+  bio         String?
+  
+  // Forum stats
+  postCount   Int      @default(0)
+  reputation  Int      @default(0)
+  
+  // Status
+  status      String @default("ACTIVE") // ACTIVE, SUSPENDED, BANNED
+  
+  // Timestamps
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  lastActive  DateTime?
+  
+  // Relations
+  posts       ForumPost[]
+  comments    ForumComment[]
+  
+  @@map("forum_users")
+}
+
+model ForumPost {
+  id          String   @id @default(cuid())
+  title       String
+  content     String
+  
+  // Post metadata
+  category    String @default("GENERAL") // GENERAL, PROJECTS, TRADING, TECHNICAL
+  tags        String? // JSON array of tags
+  
+  // Status and moderation
+  status      String @default("PUBLISHED") // DRAFT, PUBLISHED, MODERATED, DELETED
+  pinned      Boolean  @default(false)
+  locked      Boolean  @default(false)
+  
+  // Engagement
+  views       Int      @default(0)
+  likes       Int      @default(0)
+  
+  // Timestamps
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relations
+  authorId    String
+  author      ForumUser @relation(fields: [authorId], references: [id])
+  comments    ForumComment[]
+  
+  @@map("forum_posts")
+}
+
+model ForumComment {
+  id          String   @id @default(cuid())
+  content     String
+  
+  // Status and moderation
+  status      String @default("PUBLISHED") // PUBLISHED, MODERATED, DELETED
+  
+  // Engagement
+  likes       Int      @default(0)
+  
+  // Timestamps
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relations
+  authorId    String
+  author      ForumUser @relation(fields: [authorId], references: [id])
+  postId      String
+  post        ForumPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  
+  @@map("forum_comments")
+}
+
+// Publication Requests
+model PublicationRequest {
+  id          String   @id @default(cuid())
+  
+  // Requester information
+  requesterName  String
+  requesterEmail String
+  company        String?
+  
+  // Project information
+  projectName    String
+  projectSymbol  String?
+  description    String
+  website        String?
+  whitepaper     String?
+  
+  // Social links
+  twitter        String?
+  telegram       String?
+  discord        String?
+  
+  // Additional information
+  tokenAddress   String?
+  marketCap      String?
+  launchDate     DateTime?
+  
+  // Request details
+  requestType    String @default("LISTING") // LISTING, PROMOTION, PARTNERSHIP
+  budget         String?
+  additionalInfo String?
+  
+  // Status and review
+  status         String @default("PENDING") // PENDING, APPROVED, REJECTED, IN_REVIEW
+  reviewNotes    String?
+  
+  // Timestamps
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  reviewedAt     DateTime?
+  
+  // Relations
+  reviewedBy     String?
+  reviewer       AdminUser? @relation(fields: [reviewedBy], references: [id])
+  
+  @@map("publication_requests")
+}
+
+// Token Creation Requests
+model TokenCreationRequest {
+  id          String   @id @default(cuid())
+  
+  // Requester information
+  requesterName  String
+  requesterEmail String
+  
+  // Token details
+  tokenName      String
+  tokenSymbol    String
+  totalSupply    String
+  decimals       Int      @default(18)
+  
+  // Token features
+  mintable       Boolean  @default(false)
+  burnable       Boolean  @default(false)
+  pausable       Boolean  @default(false)
+  
+  // Additional features
+  description    String?
+  logoUrl        String?
+  website        String?
+  
+  // Status and processing
+  status         String @default("PENDING") // PENDING, PROCESSING, COMPLETED, FAILED
+  transactionHash String?
+  contractAddress String?
+  
+  // Timestamps
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  completedAt    DateTime?
+  
+  // Relations
+  processedBy    String?
+  processor      AdminUser? @relation(fields: [processedBy], references: [id])
+  
+  @@map("token_creation_requests")
+}
+
+// User Connections (for networking)
+model UserConnection {
+  id          String   @id @default(cuid())
+  
+  // Connection details
+  requesterEmail String
+  targetEmail    String
+  message        String?
+  
+  // Status
+  status      String @default("PENDING") // PENDING, ACCEPTED, REJECTED
+  
+  // Timestamps
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@map("user_connections")
+}
+
+// User Roles and Permissions
+model UserRole {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  permissions String   // JSON array of permissions
+  
+  // Timestamps
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@map("user_roles")
+}
