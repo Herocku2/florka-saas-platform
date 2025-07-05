@@ -1,0 +1,89 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: florkanewfun_postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: florkanewfun_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - florkanewfun_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: florkanewfun_backend
+    environment:
+      - DATABASE_URL=postgresql://postgres:password@postgres:5432/florkanewfun_db?schema=public
+      - JWT_SECRET=florkanewfun-super-secret-jwt-key-development-only
+      - JWT_EXPIRES_IN=24h
+      - JWT_REFRESH_SECRET=florkanewfun-super-secret-refresh-jwt-key-development-only
+      - JWT_REFRESH_EXPIRES_IN=7d
+      - PORT=3001
+      - NODE_ENV=development
+      - CORS_ORIGIN=http://localhost:5173
+      - BCRYPT_SALT_ROUNDS=12
+    ports:
+      - "3001:3001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - florkanewfun_network
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    command: sh -c "npx prisma db push --force-reset && npx prisma generate && npm run dev"
+
+  # Frontend (React + Vite)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: florkanewfun_frontend
+    environment:
+      - VITE_API_URL=http://localhost:3001/api
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+    networks:
+      - florkanewfun_network
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+
+  # Database Administration (Adminer)
+  adminer:
+    image: adminer:4.8.1
+    container_name: florkanewfun_adminer
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+    networks:
+      - florkanewfun_network
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  florkanewfun_network:
+    driver: bridge
