@@ -1,17 +1,23 @@
+# Backend Dockerfile
 FROM node:18-alpine
-
-# Install OpenSSL and development libraries for Prisma and native modules
-RUN apk add --no-cache openssl openssl-dev libc6-compat
 
 # Set working directory
 WORKDIR /app
 
+# Install system dependencies
+RUN apk add --no-cache \
+    curl \
+    postgresql-client
+
 # Copy package files
 COPY package*.json ./
-COPY tsconfig.json ./
+COPY prisma ./prisma/
 
 # Install dependencies
-RUN npm install
+RUN npm ci --only=production && npm cache clean --force
+
+# Install development dependencies for building
+RUN npm install --save-dev typescript @types/node
 
 # Copy source code
 COPY . .
@@ -22,12 +28,20 @@ RUN npx prisma generate
 # Build the application
 RUN npm run build
 
+# Create non-root user
+RUN addgroup -g 1001 -S nodejs
+RUN adduser -S backend -u 1001
+
+# Change ownership of the app directory
+RUN chown -R backend:nodejs /app
+USER backend
+
 # Expose port
-EXPOSE 3001
+EXPOSE 3000
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:3001/health || exit 1
+    CMD curl -f http://localhost:3000/api/health || exit 1
 
 # Start the application
 CMD ["npm", "start"]
